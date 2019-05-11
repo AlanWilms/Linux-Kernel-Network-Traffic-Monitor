@@ -1,6 +1,4 @@
-# Report
-
-## Question 1:
+## Implementation:
 
 The kernel module is essentially implemented using two netfilter hooks (one for local incoming, the other for local outgoing packets), a linked list of runtime policy rules, and a linked list of IP addresses that are to be monitored and the number of received and dropped packets from that address.
 
@@ -18,13 +16,13 @@ Cleanup frees all memory, including the proc file, unregisters the hooks, and fr
 
 *Note: the project instruction stated that we were to "implement the ability to filter incoming/outgoing traffic from/to specific addresses." We took this to mean that the user is able to block BOTH the incoming and outgoing traffic with respect to a particular IP address. (And thus each block command would essentially create two "rules") We could have just as easily allowed the user to specify ONLY blocking outgoing or ONLY blocking incoming packets, however this seemed less practical to us.*
 
-## Question 2:
+## CLI Commands:
 
 From the user perspective, the design of the UI is pretty standard. The initial commands that are available are “help”, “monitor”, “block”, “status”, and “exit”. “help” and “exit” are fairly self-explanatory. “monitor” prompts the user to input whether or not they want to monitor/stop monitoring a specific IP address. Then, the user is asked to input the IP address. If the IP is valid it invokes a callback write to /proc/firewall_rules, writing a character to communicate to the kernel module which action to take, followed by the IP address. Blocking/unblocking are done in a similar manner, and these options are also prompted to the user when they input “block”. “block” also has an option to determine whether or not you want to block/unblock all addresses, rather than inputting a specific one. Finally, “status” communicates to the kernel module that it must write its monitoring data to the msg field. The program sleeps temporarily, and then reads the data from firewall_rules and prints it out to the console.
 
 ![./images/UI.png)](./images/UI.png)
 
-## Question 3:
+## Netfilter Hooks:
 
 Netfilter hooks are structures that are triggered (or rather trigger the kernel module that have registered them) at certain points when packets progress through the network stack and provide the backbone of a netfilter. In Linux they are implemented as part of a struct nf_hook_ops.
 The certain type of hook that a packet will activate depends on its metadata: whether it is incoming or outgoing, its destination, and whether it was previously dropped or rejected.
@@ -39,21 +37,21 @@ The five general netfilter hooks are:
 
 In our netfilter program, we used two of them: NF_IP_LOCAL_IN and NF_IP_LOCAL_OUT.
 
-## Question 4:
+## Testing:
 
 To test blocking, unblocking, and monitoring received packets we simply pinged small websites that only use 1 server, got their IP address, and manipulated it accordingly to make sure the behavior matched the requirements. Furthermore, because the end of ping returned with the number of packets received and percentage dropped, this gave us a great tool to verify our results.To check the behavior, we used dmesg to check the kernel logs and “status” to check our own. To test dropping packets, because they had to be incoming ones, we opened up a streaming website like YouTube. YouTube had many different IP addresses, so we would monitor and block a few of them. Then we would wait for a little while, and check the status to ensure the packets were being dropped (and when unblocked, that they were received). As shown in our second image, we even tested more complex (even edge) cases. We added multiple rules, checked the behavior of monitors when we drastically changed the rules from blocking all to unblocking all, and performed successive monitoring and unmonitorings.
 
-## Question 5:
+## Future: Stateful Firewall:
 
 In order to implement something like a stateful firewall, it would be necessary to keep track of the context from each packet within a given connection (this allows us to know if a packet is part of an existing connection, trying to establish a new one, or a rogue). So, for each unique dest/src IP pair, we would need to create either a linked_list or some other struct that stores data about that connection. That way, each incoming packet can first be screened and dynamically vetted by its context, by looking at previous packets sent through that same connection. In the same way that a list structure was created for monitors and rules, so too would a structure have to be defined for each packet. That way, additional information about each packet within the list could also be recorded. Finally, as each packet is vetted from the different connection, their cummulative data would need to be stored in a state table. That state table would also be used as part of the vetting process as more information was updated.
 
 More specifically, a good start would be to add a protocol field to the firewall_rule struct, which would allow each rule to work on UDP or TCP packets, as opposed to both. A ip_header->protocol value of 17 means UDP and 6 means TCP. Furthermore, adding a port field also gives some more flexibility in this regard.
 
-## Question 6:
+## Future: Quotas:
 
 The module already keeps track of how many packets are being received from a specific address, but it would also need to keep track of how many packets are being sent to a specific address in order to limit traffic going in both directions. The same monitoring structures that were used in hook_func_in would be copied to hook_func_out so that we can put a limit on outgoing traffic as well (this time monitoring the destination IP). Once a certain number of packets, dependent upon the quota, were registered as being received or sent, a corresponding rule would be created to start dropping those packets. Specifically, right where we checked the is_monitored condition (before a packet is dropped or accepted), we would include another statement that would evaluate whether the current number of packets received has exceeded this quota and, if so, call add_rule and at the end drop the packet. We would pass a firewall_rule struct containing the packet IP address, which would ensure that all further packets from that IP address without any additional checks.
 
-## Question 7:
+## Linux Kernel:
 
 There are a variety of reasons why Linux does not support a binary kernel interface. For one thing, kernel drivers can look different depending on which C compiler is used, which can lead to different behavior (especially with regards to the implementation of data structures). Additionally, because Linux is so versatile on so many different architectures, the binary drivers would also have to be compatible across different system architectures.
 However, perhaps the biggest reason is because Linux does not even have a stable kernel interface to begin with. What makes Linux so popular is the fact that it is constantly being improved, and when that happens function names, parameters, structures, and other variables will change. Therefore, unless the driver was originally within the main kernel tree, it may not still be compatible. That is why some code gets outdated when written for Linux (such as the netfilter examples). As a result, it simply isn’t worth the time to support a consistent ABI.
